@@ -1,0 +1,8 @@
+.DS_Store
+dist/
+*.app/
+*.m4s
+*.mp4
+*.m4a
+videoInfo.json
+.playurl
