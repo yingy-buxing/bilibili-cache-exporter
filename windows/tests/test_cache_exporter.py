@@ -3,11 +3,14 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from cache_exporter import export, find_ffmpeg, make_readable_copy, safe_filename, scan_folder
+from cache_exporter import export, find_ffmpeg, make_readable_copy, safe_filename, saved_cache_folder, save_cache_folder, scan_folder
+from app import App
 
 
 class CacheExporterTests(unittest.TestCase):
@@ -35,6 +38,27 @@ class CacheExporterTests(unittest.TestCase):
             make_readable_copy(source, destination)
             self.assertEqual(destination.read_bytes(), b"plain-data")
         self.assertEqual(safe_filename(' A:B? '), "A-B-")
+
+    def test_saved_folder_survives_reload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory) / "cache"
+            folder.mkdir()
+            settings = Path(directory) / "settings.json"
+            save_cache_folder(folder, settings)
+            self.assertEqual(saved_cache_folder(settings), folder)
+            folder.rmdir()
+            self.assertIsNone(saved_cache_folder(settings))
+
+    def test_refresh_uses_selected_source(self):
+        folder = Path("C:/cache")
+        source = SimpleNamespace(source_folder=folder, source_file=None,
+                                 _scan_folder=Mock(), _load_file=Mock(), _load_defaults=Mock())
+        App._refresh(source)
+        source._scan_folder.assert_called_once_with(folder)
+        source._load_defaults.assert_not_called()
+        source.source_file = Path("C:/cache/video.m4s")
+        App._refresh(source)
+        source._load_file.assert_called_once_with(source.source_file)
 
     @unittest.skipUnless(find_ffmpeg(), "FFmpeg is unavailable")
     def test_three_export_modes(self):

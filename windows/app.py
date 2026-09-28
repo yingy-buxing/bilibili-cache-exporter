@@ -7,7 +7,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from cache_exporter import CacheItem, default_cache_folders, export, find_ffmpeg, item_from_file, safe_filename, scan_folder
+from cache_exporter import CacheItem, default_cache_folders, export, find_ffmpeg, item_from_file, safe_filename, saved_cache_folder, save_cache_folder, scan_folder
 
 try:
     from PIL import Image, ImageTk
@@ -34,11 +34,13 @@ class App(tk.Tk):
         self.cards: list[tk.Frame] = []
         self.images: list[object] = []
         self.busy = False
+        self.source_folder: Path | None = saved_cache_folder()
+        self.source_file: Path | None = None
         self.mode = tk.StringVar(value="video")
         self.status = tk.StringVar(value="准备就绪")
         self.detail = tk.StringVar(value="选择缓存视频后即可导出。")
         self._build()
-        self.after(100, self._load_defaults)
+        self.after(100, self._refresh)
 
     def _build(self) -> None:
         self.configure(bg="#f5f6fa")
@@ -70,7 +72,7 @@ class App(tk.Tk):
             ttk.Radiobutton(modes, text=label, variable=self.mode, value=value, command=self._update_selection).pack(side="left", padx=(4, 18))
         actions = tk.Frame(bottom, bg="#f5f6fa")
         actions.pack(fill="x")
-        self.refresh_button = ttk.Button(actions, text="刷新缓存列表", command=self._load_defaults)
+        self.refresh_button = ttk.Button(actions, text="刷新缓存列表", command=self._refresh)
         self.refresh_button.pack(side="left")
         self.folder_button = ttk.Button(actions, text="选择文件夹…", command=self._choose_folder)
         self.folder_button.pack(side="left", padx=(8, 0))
@@ -82,6 +84,14 @@ class App(tk.Tk):
 
     def _scroll(self, event: tk.Event) -> None:
         self.canvas.yview_scroll(-int(event.delta / 120), "units")
+
+    def _refresh(self) -> None:
+        if self.source_file is not None:
+            self._load_file(self.source_file)
+        elif self.source_folder is not None:
+            self._scan_folder(self.source_folder)
+        else:
+            self._load_defaults()
 
     def _load_defaults(self) -> None:
         folders = default_cache_folders()
@@ -101,13 +111,23 @@ class App(tk.Tk):
         threading.Thread(target=work, daemon=True).start()
 
     def _choose_folder(self) -> None:
-        path = filedialog.askdirectory(title="选择哔哩哔哩缓存文件夹")
+        options = {"initialdir": str(self.source_folder)} if self.source_folder else {}
+        path = filedialog.askdirectory(title="选择哔哩哔哩缓存文件夹", **options)
         if not path:
             return
+        self.source_folder = Path(path)
+        self.source_file = None
+        try:
+            save_cache_folder(self.source_folder)
+        except OSError:
+            pass
+        self._scan_folder(self.source_folder)
+
+    def _scan_folder(self, folder: Path) -> None:
         self._set_busy(True, "正在扫描缓存…")
 
         def work() -> None:
-            items = scan_folder(Path(path))
+            items = scan_folder(folder)
             self.after(0, lambda: self._show_items(items, f"找到 {len(items)} 个缓存"))
 
         threading.Thread(target=work, daemon=True).start()
@@ -115,8 +135,12 @@ class App(tk.Tk):
     def _choose_file(self) -> None:
         path = filedialog.askopenfilename(title="选择视频 .m4s 文件", filetypes=[("M4S 缓存", "*.m4s")])
         if path:
-            item = item_from_file(Path(path))
-            self._show_items([item] if item else [], "已载入缓存文件" if item else "无法识别缓存文件")
+            self.source_file = Path(path)
+            self._load_file(self.source_file)
+
+    def _load_file(self, path: Path) -> None:
+        item = item_from_file(path)
+        self._show_items([item] if item else [], "已载入缓存文件" if item else "无法识别缓存文件")
 
     def _show_items(self, items: list[CacheItem], status: str) -> None:
         self.items = items

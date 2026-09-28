@@ -36,6 +36,25 @@ def default_cache_folders() -> list[Path]:
     return [folder for folder in dict.fromkeys(candidates) if folder.is_dir()]
 
 
+def settings_file() -> Path:
+    local_app_data = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    return local_app_data / "BiliCacheExporter" / "settings.json"
+
+
+def saved_cache_folder(path: Path | None = None) -> Path | None:
+    value = _json(path or settings_file()).get("cache_folder")
+    if not isinstance(value, str) or not value:
+        return None
+    folder = Path(value)
+    return folder if folder.is_dir() else None
+
+
+def save_cache_folder(folder: Path, path: Path | None = None) -> None:
+    destination = path or settings_file()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps({"cache_folder": str(folder)}, ensure_ascii=False), encoding="utf-8")
+
+
 def _json(path: Path) -> dict:
     try:
         value = json.loads(path.read_text(encoding="utf-8-sig"))
